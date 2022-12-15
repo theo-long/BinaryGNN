@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 from spektral.datasets import Citation
-from spektral.transforms import LayerPreprocess
+from spektral.transforms import LayerPreprocess, AdjToSpTensor
 from spektral.layers import GCNConv
 from spektral.data import SingleLoader
 
@@ -10,8 +10,13 @@ import numpy as np
 
 def prepare_dataset(dataset):
     # LayerPreprocesses adds self loops and normalizes the adjacency matrix
-    dataset = Citation(dataset, normalize_x=True, transforms=[LayerPreprocess(GCNConv)])
+    dataset = Citation(
+        dataset,
+        normalize_x=True,
+        transforms=[LayerPreprocess(GCNConv), AdjToSpTensor()],
+    )
 
+    print("Dataset: ", dataset.name)
     print("Size of train set:", dataset.mask_tr.sum().item())
     print("Size of val set:", dataset.mask_va.sum().item())
     print("Size of test set:", dataset.mask_te.sum().item())

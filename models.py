@@ -5,7 +5,7 @@ from typing import Tuple
 
 
 class GraphConv(tf.keras.layers.Layer):
-    def __init__(self, a):
+    def __init__(self, a: tf.sparse.SparseTensor):
         super(GraphConv, self).__init__()
         self.a = a
 
@@ -14,7 +14,7 @@ class GraphConv(tf.keras.layers.Layer):
         return config
 
     def call(self, inputs):
-        return tf.matmul(self.a, inputs)
+        return tf.sparse.sparse_dense_matmul(self.a, inputs)
 
 
 def generate_quantized_gcn(
@@ -34,7 +34,7 @@ def generate_quantized_gcn(
     **layer_kwargs
 ):
     node_features = tf.keras.Input(shape=(input_shapes[0]))
-    adj_matrix = tf.keras.layers.Input(shape=(input_shapes[1]))
+    adj_matrix = tf.keras.layers.Input(shape=(input_shapes[1]), sparse=True)
     x_intermediate = tf.keras.layers.BatchNormalization(
         momentum=batch_norm_momentum,
         epsilon=batch_norm_epsilon,
@@ -104,7 +104,7 @@ def generate_standard_gcn(
     **layer_kwargs
 ):
     node_features = tf.keras.Input(shape=(input_shapes[0]))
-    adj_matrix = tf.keras.layers.Input(shape=(input_shapes[1]))
+    adj_matrix = tf.keras.layers.Input(shape=(input_shapes[1]), sparse=True)
 
     if use_batch_norm:
         x_intermediate = tf.keras.layers.BatchNormalization(
