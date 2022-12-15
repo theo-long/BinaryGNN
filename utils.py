@@ -13,7 +13,7 @@ def prepare_dataset(dataset):
     dataset = Citation(
         dataset,
         normalize_x=True,
-        transforms=[LayerPreprocess(GCNConv), AdjToSpTensor()],
+        transforms=[LayerPreprocess(GCNConv)],
     )
 
     print("Dataset: ", dataset.name)

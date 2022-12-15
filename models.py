@@ -3,9 +3,12 @@ import larq as lq
 
 from typing import Tuple
 
+from spektral.data import Dataset
+from spektral.utils import sp_matrix_to_sp_tensor
+
 
 class GraphConv(tf.keras.layers.Layer):
-    def __init__(self, a: tf.sparse.SparseTensor):
+    def __init__(self, a):
         super(GraphConv, self).__init__()
         self.a = a
 
@@ -14,13 +17,13 @@ class GraphConv(tf.keras.layers.Layer):
         return config
 
     def call(self, inputs):
-        return tf.sparse.sparse_dense_matmul(self.a, inputs)
+        return tf.matmul(self.a, inputs)
 
 
 def generate_quantized_gcn(
     channels: int,
     input_shapes: Tuple[Tuple, Tuple],
-    output_features: int,
+    dataset: Dataset,
     dropout_rate: float,
     layers: int = 2,
     input_quantizer=lq.quantizers.SteSign,
@@ -51,7 +54,9 @@ def generate_quantized_gcn(
             kernel_regularizer=kernel_regularizer,
             **layer_kwargs
         )(x_intermediate)
-        x_intermediate = GraphConv(adj_matrix)(x_intermediate)
+        x_intermediate = GraphConv(
+            tf.sparse.to_dense(sp_matrix_to_sp_tensor(dataset.graphs[0].a))
+        )(x_intermediate)
 
         if not single_batch_norm:
             x_intermediate = tf.keras.layers.BatchNormalization(
@@ -65,13 +70,15 @@ def generate_quantized_gcn(
     x_intermediate = input_quantizer()(x_intermediate)
     x_intermediate = tf.keras.layers.Dropout(rate=dropout_rate)(x_intermediate)
     x_intermediate = lq.layers.QuantDense(
-        units=output_features,
+        units=dataset.n_labels,
         kernel_initializer="he_uniform",
         kernel_quantizer=kernel_quantizer,
         kernel_regularizer=kernel_regularizer,
         **layer_kwargs
     )(x_intermediate)
-    x_intermediate = GraphConv(adj_matrix)(x_intermediate)
+    x_intermediate = GraphConv(
+        tf.sparse.to_dense(sp_matrix_to_sp_tensor(dataset.graphs[0].a))
+    )(x_intermediate)
     outputs = tf.keras.layers.Softmax()(x_intermediate)
 
     model = tf.keras.Model(
@@ -91,7 +98,7 @@ def generate_quantized_gcn(
 def generate_standard_gcn(
     channels: int,
     input_shapes: Tuple[Tuple, Tuple],
-    output_features: int,
+    dataset: Dataset,
     dropout_rate: float,
     layers: int = 2,
     activation=tf.keras.layers.ReLU,
@@ -122,7 +129,9 @@ def generate_standard_gcn(
         x_intermediate = tf.keras.layers.Dense(units=channels, **layer_kwargs)(
             x_intermediate
         )
-        x_intermediate = GraphConv(adj_matrix)(x_intermediate)
+        x_intermediate = GraphConv(
+            tf.sparse.to_dense(sp_matrix_to_sp_tensor(dataset.graphs[0].a))
+        )(x_intermediate)
         x_intermediate = activation()(x_intermediate)
 
         if use_batch_norm and (not single_batch_norm):
@@ -135,10 +144,12 @@ def generate_standard_gcn(
 
     # Final layer: same as before but with specified number of output labels and softmax
     x_intermediate = tf.keras.layers.Dropout(rate=dropout_rate)(x_intermediate)
-    x_intermediate = tf.keras.layers.Dense(units=output_features, **layer_kwargs)(
+    x_intermediate = tf.keras.layers.Dense(units=dataset.n_labels, **layer_kwargs)(
         x_intermediate
+    )
+    x_intermediate = GraphConv(
+        tf.sparse.to_dense(sp_matrix_to_sp_tensor(dataset.graphs[0].a))
     )(x_intermediate)
-    x_intermediate = GraphConv(adj_matrix)(x_intermediate)
     outputs = tf.keras.layers.Softmax()(x_intermediate)
 
     model = tf.keras.Model(
