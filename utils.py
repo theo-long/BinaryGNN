@@ -7,10 +7,10 @@ from spektral.data import SingleLoader
 
 import numpy as np
 
+
 def prepare_dataset(dataset):
     # LayerPreprocesses adds self loops and normalizes the adjacency matrix
-    dataset = Citation(dataset, normalize_x=True,
-                       transforms=[LayerPreprocess(GCNConv)])
+    dataset = Citation(dataset, normalize_x=True, transforms=[LayerPreprocess(GCNConv)])
 
     print("Size of train set:", dataset.mask_tr.sum().item())
     print("Size of val set:", dataset.mask_va.sum().item())
@@ -20,8 +20,10 @@ def prepare_dataset(dataset):
 
     return dataset
 
+
 def mask_to_weights(mask):
     return mask.astype(np.float32) / np.count_nonzero(mask)
+
 
 def generate_data_loaders(dataset):
     # Extract train, test, validation sets using masks
@@ -32,3 +34,5 @@ def generate_data_loaders(dataset):
     loader_tr = SingleLoader(dataset, sample_weights=weights_tr)
     loader_va = SingleLoader(dataset, sample_weights=weights_va)
     loader_te = SingleLoader(dataset, sample_weights=weights_te)
+
+    return loader_tr, loader_va, loader_te
