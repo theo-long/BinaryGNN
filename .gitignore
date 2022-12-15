@@ -2,3 +2,5 @@
 *.pyc
 *.ipynb
 *__pycache__/
+__pycache__/models.cpython-39.pyc
+.gitignore
