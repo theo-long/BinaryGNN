@@ -4,3 +4,6 @@
 *__pycache__/
 __pycache__/models.cpython-39.pyc
 .gitignore
+**tensorboard/
+__pycache__/models.cpython-39.pyc
+.gitignore
