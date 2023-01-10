@@ -17,7 +17,7 @@ class GraphConv(tf.keras.layers.Layer):
         return config
 
     def call(self, inputs):
-        return tf.matmul(self.a, inputs)
+        return tf.matmul(self.a, inputs, a_is_sparse=True)
 
 
 def generate_quantized_gcn(
@@ -47,10 +47,11 @@ def generate_quantized_gcn(
 
     # Intermediate layers: Binary Activation - Dropout - Graph Convolution
     for layer in range(layers - 1):
+        x_intermediate = input_quantizer()(x_intermediate)
         x_intermediate = tf.keras.layers.Dropout(rate=dropout_rate)(x_intermediate)
         x_intermediate = lq.layers.QuantDense(
             units=channels,
-            kernel_quantizer=kernel_quantizer,
+            kernel_quantizer=kernel_quantizer(),
             kernel_regularizer=kernel_regularizer,
             **layer_kwargs
         )(x_intermediate)
@@ -71,8 +72,7 @@ def generate_quantized_gcn(
     x_intermediate = tf.keras.layers.Dropout(rate=dropout_rate)(x_intermediate)
     x_intermediate = lq.layers.QuantDense(
         units=dataset.n_labels,
-        kernel_initializer="he_uniform",
-        kernel_quantizer=kernel_quantizer,
+        kernel_quantizer=kernel_quantizer(),
         kernel_regularizer=kernel_regularizer,
         **layer_kwargs
     )(x_intermediate)
@@ -108,6 +108,7 @@ def generate_standard_gcn(
     batch_norm_center=True,
     batch_norm_scale=True,
     single_batch_norm=True,
+    preactivation=False,
     **layer_kwargs
 ):
     node_features = tf.keras.Input(shape=(input_shapes[0]))
@@ -125,6 +126,9 @@ def generate_standard_gcn(
 
     # Intermediate layers: Dropout - Graph Convolution - Activation
     for layer in range(layers - 1):
+        if preactivation:
+            x_intermediate = activation()(x_intermediate)
+
         x_intermediate = tf.keras.layers.Dropout(rate=dropout_rate)(x_intermediate)
         x_intermediate = tf.keras.layers.Dense(units=channels, **layer_kwargs)(
             x_intermediate
@@ -132,7 +136,9 @@ def generate_standard_gcn(
         x_intermediate = GraphConv(
             tf.sparse.to_dense(sp_matrix_to_sp_tensor(dataset.graphs[0].a))
         )(x_intermediate)
-        x_intermediate = activation()(x_intermediate)
+
+        if not preactivation:
+            x_intermediate = activation()(x_intermediate)
 
         if use_batch_norm and (not single_batch_norm):
             x_intermediate = tf.keras.layers.BatchNormalization(
@@ -143,6 +149,8 @@ def generate_standard_gcn(
             )(x_intermediate)
 
     # Final layer: same as before but with specified number of output labels and softmax
+    if preactivation:
+        x_intermediate = activation()(x_intermediate)
     x_intermediate = tf.keras.layers.Dropout(rate=dropout_rate)(x_intermediate)
     x_intermediate = tf.keras.layers.Dense(units=dataset.n_labels, **layer_kwargs)(
         x_intermediate
