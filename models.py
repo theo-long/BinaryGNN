@@ -34,11 +34,12 @@ def generate_quantized_gcn(
     batch_norm_scale=True,
     single_batch_norm=True,
     kernel_regularizer=None,
+    normalizer=tf.keras.layers.BatchNormalization,
     **layer_kwargs
 ):
     node_features = tf.keras.Input(shape=(input_shapes[0]))
     adj_matrix = tf.keras.layers.Input(shape=(input_shapes[1]), sparse=True)
-    x_intermediate = tf.keras.layers.BatchNormalization(
+    x_intermediate = normalizer(
         momentum=batch_norm_momentum,
         epsilon=batch_norm_epsilon,
         center=batch_norm_center,
@@ -60,7 +61,7 @@ def generate_quantized_gcn(
         )(x_intermediate)
 
         if not single_batch_norm:
-            x_intermediate = tf.keras.layers.BatchNormalization(
+            x_intermediate = normalizer(
                 momentum=batch_norm_momentum,
                 epsilon=batch_norm_epsilon,
                 center=batch_norm_center,
