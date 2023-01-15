@@ -35,8 +35,10 @@ def generate_quantized_gcn(
     single_batch_norm=True,
     kernel_regularizer=None,
     normalizer=tf.keras.layers.BatchNormalization,
-    **layer_kwargs
+    softmax_temperature=1.0,
+    **layer_kwargs,
 ):
+
     node_features = tf.keras.Input(shape=(input_shapes[0]))
     adj_matrix = tf.keras.layers.Input(shape=(input_shapes[1]), sparse=True)
     x_intermediate = normalizer(
@@ -54,7 +56,7 @@ def generate_quantized_gcn(
             units=channels,
             kernel_quantizer=kernel_quantizer(),
             kernel_regularizer=kernel_regularizer,
-            **layer_kwargs
+            **layer_kwargs,
         )(x_intermediate)
         x_intermediate = GraphConv(
             tf.sparse.to_dense(sp_matrix_to_sp_tensor(dataset.graphs[0].a))
@@ -75,11 +77,17 @@ def generate_quantized_gcn(
         units=dataset.n_labels,
         kernel_quantizer=kernel_quantizer(),
         kernel_regularizer=kernel_regularizer,
-        **layer_kwargs
+        **layer_kwargs,
     )(x_intermediate)
     x_intermediate = GraphConv(
         tf.sparse.to_dense(sp_matrix_to_sp_tensor(dataset.graphs[0].a))
     )(x_intermediate)
+
+    if softmax_temperature != 1.0:
+        x_intermediate = tf.keras.layers.Lambda(
+            lambda x: tf.math.divide(x, softmax_temperature)
+        )(x_intermediate)
+
     outputs = tf.keras.layers.Softmax()(x_intermediate)
 
     model = tf.keras.Model(
@@ -110,7 +118,7 @@ def generate_standard_gcn(
     batch_norm_scale=True,
     single_batch_norm=True,
     preactivation=False,
-    **layer_kwargs
+    **layer_kwargs,
 ):
     node_features = tf.keras.Input(shape=(input_shapes[0]))
     adj_matrix = tf.keras.layers.Input(shape=(input_shapes[1]), sparse=True)

@@ -12,6 +12,7 @@ from tqdm import trange
 import gc
 import glob
 import re
+import os
 
 
 def prepare_dataset(dataset):
@@ -60,25 +61,37 @@ def run_experiment(
     callbacks,
     reduce_memory_overhead=True,
     verbose=0,
+    remove_old_model_files=True,
+    recreate_optimizer=False,
 ):
     loader_tr, loader_va, loader_te = generate_data_loaders(dataset)
 
     history_dataframes = []
     eval_data = []
 
-    checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
-        "model.tf",
-        monitor="val_accuracy",
-        save_best_only=True,
-        save_weights_only=True,
-    )
-    callbacks.append(checkpoint_callback)
+    # Clear out old model files
+    if remove_old_model_files:
+        model_files = glob.glob("model_files/*")
+        for f in model_files:
+            os.remove(f)
+
     for run in trange(num_runs):
+        if recreate_optimizer:
+            opt = optimizer()
+        else:
+            opt = optimizer
+
+        checkpoint_path = f"model_files/{experiment_name}_run_{run}.tf"
+        checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
+            checkpoint_path,
+            monitor="val_accuracy",
+            save_best_only=True,
+            save_weights_only=True,
+        )
+
         model: tf.keras.Model = model_factory()
 
-        model.compile(
-            optimizer=optimizer, loss=loss_function, weighted_metrics=["accuracy"]
-        )
+        model.compile(optimizer=opt, loss=loss_function, weighted_metrics=["accuracy"])
 
         history = model.fit(
             loader_tr.load(),
@@ -86,11 +99,11 @@ def run_experiment(
             validation_data=loader_va.load(),
             validation_steps=loader_va.steps_per_epoch,
             epochs=epochs,
-            callbacks=callbacks,
+            callbacks=callbacks + [checkpoint_callback],
             verbose=verbose,
         )
         # Restore best weights
-        model.load_weights("model.tf")
+        model.load_weights(checkpoint_path)
         eval_results = model.evaluate(
             loader_te.load(), steps=loader_te.steps_per_epoch, verbose=verbose
         )
@@ -133,12 +146,15 @@ def plot_training_curves(
     if not loss_plot_kwargs:
         loss_plot_kwargs = {}
 
-    mean_df = history_df.groupby(["epoch", hyperparameter_name])[
+    median_df = history_df.groupby(["epoch", hyperparameter_name])[
         ["loss", "accuracy", "val_loss", "val_accuracy"]
-    ].mean()
-    std_df = history_df.groupby(["epoch", hyperparameter_name])[
+    ].quantile(0.5)
+    top_quantile_df = history_df.groupby(["epoch", hyperparameter_name])[
         ["loss", "accuracy", "val_loss", "val_accuracy"]
-    ].std()
+    ].quantile(0.75)
+    bottom_quantile_df = history_df.groupby(["epoch", hyperparameter_name])[
+        ["loss", "accuracy", "val_loss", "val_accuracy"]
+    ].quantile(0.25)
 
     try:
         hyper_values = history_df[hyperparameter_name].sort_values().unique()
@@ -149,10 +165,10 @@ def plot_training_curves(
     for metric in ["accuracy", "loss"]:
         for prefix in ["", "val_"]:
             plot_kwargs = acc_plot_kwargs if metric == "accuracy" else loss_plot_kwargs
-            ax = mean_df[prefix + metric].unstack().plot(**plot_kwargs)
+            ax = median_df[prefix + metric].unstack().plot(**plot_kwargs)
             if error_bars:
-                lower = (mean_df - std_df)[prefix + metric].unstack()
-                upper = (mean_df + std_df)[prefix + metric].unstack()
+                lower = bottom_quantile_df[prefix + metric].unstack()
+                upper = top_quantile_df[prefix + metric].unstack()
                 for hyper_value in hyper_values:
                     plt.fill_between(
                         lower.index, lower[hyper_value], upper[hyper_value], alpha=0.4
